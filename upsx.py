@@ -5,6 +5,7 @@
 
 # Modules
 import re
+import sys
 import time
 import socket
 import atexit
@@ -12,11 +13,25 @@ import logging
 import subprocess
 
 # Handle logging
-logging.basicConfig(level = logging.INFO)
+logging.basicConfig(
+    format = "[%(asctime)s] (%(levelname)s) %(message)s",
+    datefmt = "%m/%d/%Y %H:%M:%S",
+    level = logging.DEBUG if "-D" in sys.argv else logging.INFO
+)
 log = logging.getLogger("upsx")
 
-__version__ = "0.2.7"
-log.info(f"upsx version {__version__} is running.")
+__version__ = "0.2.8"
+
+# Handle help menu
+if "-h" in sys.argv or "--help" in sys.argv:
+    print("upsx [-h, --help] [-D] [-v]")
+    print("  -h:  show this message and exit")
+    print("  -D:  enable debug logging")
+    print("  -v:  print out all ups variables and exit")
+    print(f"\nv{__version__}. https://github.com/iiarchives/linux-utils")
+    exit()
+
+log.info(f"upsx v{__version__} is running: https://github.com/iiarchives/linux-utils")
 
 # Configuration
 UPSD_TARGET   = "tripplite"   # The name of the UPS you want to track
@@ -61,6 +76,8 @@ class NUTCommunication:
 
     def connect(self) -> None:
         try:
+            logging.info(f"Creating connection to {UPSD_HOST}:{UPSD_PORT} from {LOCAL_HOST}:{LOCAL_PORT}")
+
             self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT), source_address = (LOCAL_HOST, LOCAL_PORT), timeout = 10)
             self.file = self.socket.makefile("rwb", buffering = 0)
 
@@ -71,10 +88,13 @@ class NUTCommunication:
             self.connect()
 
     def send_line(self, line: str) -> None:
+        logging.debug(f"Sent through socket: {line}")
         self.file.write((line + "\n").encode())
 
     def recv_line(self) -> str:
-        return self.file.readline().decode().strip()
+        line = self.file.readline().decode().strip()
+        logging.debug(f"Received line from socket: {line}")
+        return line
 
     def fetch_variables(self) -> dict[str, str]:
         self.send_line(f"LIST VAR {UPSD_TARGET}")
@@ -110,6 +130,14 @@ class NUTCommunication:
 NUT = NUTCommunication()
 atexit.register(NUT.kill)
 
+if "-v" in sys.argv:
+    variables = NUT.fetch_variables().items()
+    biggest = len(max(variables, key = lambda k: len(k[0]))[0])
+    for key, value in variables:
+        print(f"  {key}{' ' * (biggest - len(key))}: {value}")
+
+    exit()
+
 # Main event loop
 while True:
     variables = NUT.fetch_variables()
@@ -138,9 +166,11 @@ while True:
 
         # And then actually launch everything
         for command in launch_data:
-            subprocess.run(*command)
+            logging.debug(f"Running command: \"{' '.join(command)}\"")
+            subprocess.run(command)
 
         if possible_command.get("break") is True:
+            logging.debug("Killing daemon because the matched command has break enabled!")
             exit()
 
     time.sleep(UPSC_INTERVAL)
