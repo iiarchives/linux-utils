@@ -15,7 +15,7 @@ import subprocess
 logging.basicConfig(level = logging.INFO)
 log = logging.getLogger("upsx")
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 log.info(f"upsx version {__version__} is running.")
 
 # Configuration
@@ -62,7 +62,7 @@ class NUTCommunication:
             self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT))
             self.file = self.socket.makefile("rwb", buffering = 0)
 
-        except ConnectionError:
+        except (OSError, ConnectionError):
             log.error("Failed to establish socket connection! Retrying in 10 seconds.")
             time.sleep(10)
 
