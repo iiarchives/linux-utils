@@ -36,7 +36,7 @@ RUN_COMMAND   = [
         # so you have to convert the value to whatever type you require.
 
         # In this case, are we lower then 25% battery?
-        "check": lambda charge, status: int(charge) <= 25 and status != "OL",
+        "check": lambda charge, status: int(charge) <= 25 and status not in ["OL", "OL CHRG"],
 
         # List of commands to run in order from top-down when our check returns `True`.
         "launch": [
