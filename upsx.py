@@ -4,7 +4,6 @@
 # upsx - replacement for NUT's ups-monitor
 
 # Modules
-from asyncio import Timeout
 import re
 import time
 import socket
@@ -16,7 +15,7 @@ import subprocess
 logging.basicConfig(level = logging.INFO)
 log = logging.getLogger("upsx")
 
-__version__ = "0.2.2"
+__version__ = "0.2.4"
 log.info(f"upsx version {__version__} is running.")
 
 # Configuration
@@ -61,8 +60,6 @@ class NUTCommunication:
     def connect(self) -> None:
         try:
             self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT))
-            self.socket.settimeout(5)
-
             self.file = self.socket.makefile("rwb", buffering = 0)
 
         except ConnectionError:
@@ -78,29 +75,28 @@ class NUTCommunication:
         return self.file.readline().decode().strip()
 
     def fetch_variables(self) -> dict[str, str]:
-        try:
-            self.send_line(f"LIST VAR {UPSD_TARGET}")
+        self.send_line(f"LIST VAR {UPSD_TARGET}")
 
-            # Process variables
-            variables = {}
-            while True:
-                line = self.recv_line()
-                if line.startswith("END LIST VAR"):
-                    break
+        # Process variables
+        variables = {}
+        while True:
+            line = self.recv_line()
+            if not line:
+                log.error("Connection to NUT timed out, reestablishing socket.")
+                self.connect()
+                return self.fetch_variables()
 
-                line_data = NUT_VARIABLE_REGEX.match(line)
-                if line_data is None:
-                    continue
+            if line.startswith("END LIST VAR"):
+                break
 
-                key, value = line_data.groups()
-                variables[key] = value
+            line_data = NUT_VARIABLE_REGEX.match(line)
+            if line_data is None:
+                continue
 
-            return variables
+            key, value = line_data.groups()
+            variables[key] = value
 
-        except TimeoutError:
-            log.error("Connection to NUT timed out, reestablishing socket.")
-            self.connect()
-            return self.fetch_variables()
+        return variables
 
     def kill(self) -> None:
         self.send_line("LOGOUT")
