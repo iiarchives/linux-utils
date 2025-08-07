@@ -15,13 +15,15 @@ import subprocess
 logging.basicConfig(level = logging.INFO)
 log = logging.getLogger("upsx")
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 log.info(f"upsx version {__version__} is running.")
 
 # Configuration
 UPSD_TARGET   = "tripplite"   # The name of the UPS you want to track
 UPSD_HOST     = "10.48.1.10"  # The IP address that UPSD is running on
 UPSD_PORT     = 3493          # The port that UPSD is running on, most likely is set to default
+LOCAL_PORT    = 0             # The port you want this client listening on, should probably leave this alone
+LOCAL_HOST    = "0.0.0.0"     # The host you want this client listening on, ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 UPSC_INTERVAL = 5             # Seconds to wait before polling
 RUN_COMMAND   = [
     {
@@ -32,8 +34,8 @@ RUN_COMMAND   = [
         # and is responsible for returning a bool indicating if we should run our
         # commands or not.
 
-        # Note that the value passed to this function will always be a string,
-        # so you have to convert the value to whatever type you require.
+        # Note that the values passed to this function will always be a string,
+        # so you have to convert the values to whatever type you require.
 
         # In this case, are we lower then 25% battery?
         "check": lambda charge, status: int(charge) <= 25 and status not in ["OL", "OL CHRG"],
@@ -59,7 +61,7 @@ class NUTCommunication:
 
     def connect(self) -> None:
         try:
-            self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT))
+            self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT), source_address = (LOCAL_HOST, LOCAL_PORT))
             self.file = self.socket.makefile("rwb", buffering = 0)
 
         except (OSError, ConnectionError):
