@@ -1,14 +1,23 @@
+#!/usr/bin/python3
+
 # Copyright (c) 2025 iiPython
 # upsx - replacement for NUT's ups-monitor
 
 # Modules
+from asyncio import Timeout
 import re
 import time
 import socket
 import atexit
+import logging
 import subprocess
 
-__version__ = "0.2.1"
+# Handle logging
+logging.basicConfig(level = logging.INFO)
+log = logging.getLogger("upsx")
+
+__version__ = "0.2.2"
+log.info(f"upsx version {__version__} is running.")
 
 # Configuration
 UPSD_TARGET   = "tripplite"   # The name of the UPS you want to track
@@ -18,7 +27,7 @@ UPSC_INTERVAL = 5             # Seconds to wait before polling
 RUN_COMMAND   = [
     {
         # Specific keys from `upsc` that we're monitoring.
-        "target": ["battery.charge"],
+        "target": ["battery.charge", "ups.status"],
 
         # Lambda (or normal function) that is passed the value from our target,
         # and is responsible for returning a bool indicating if we should run our
@@ -28,7 +37,7 @@ RUN_COMMAND   = [
         # so you have to convert the value to whatever type you require.
 
         # In this case, are we lower then 25% battery?
-        "check": lambda charge: int(charge) <= 25,
+        "check": lambda charge, status: int(charge) <= 25 and status != "OL",
 
         # List of commands to run in order from top-down when our check returns `True`.
         "launch": [
@@ -39,15 +48,7 @@ RUN_COMMAND   = [
         # Indicate that the script should exit after this command fires,
         # prevents running commands twice (or more) with no debounce.
         "break": True
-    },
-
-    # Example of using multiple targets for data:
-    # {
-    #     "target": ["battery.charge", "ups.status"],
-    #     "check": lambda charge, status: int(charge) <= 25 and status == "OB",
-    #     "launch": ["shutdown", "-P", "now"],
-    #     "break": True
-    # }
+    }
 ]
 
 # Handle communication with NUT
@@ -55,8 +56,20 @@ NUT_VARIABLE_REGEX = re.compile(r"VAR \w+ ([\w\.]+) \"(.+)\"")
 
 class NUTCommunication:
     def __init__(self) -> None:
-        self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT))
-        self.file = self.socket.makefile("rwb", buffering = 0)
+        self.connect()
+
+    def connect(self) -> None:
+        try:
+            self.socket = socket.create_connection((UPSD_HOST, UPSD_PORT))
+            self.socket.settimeout(5)
+
+            self.file = self.socket.makefile("rwb", buffering = 0)
+
+        except ConnectionError:
+            log.error("Failed to establish socket connection! Retrying in 10 seconds.")
+            time.sleep(10)
+
+            self.connect()
 
     def send_line(self, line: str) -> None:
         self.file.write((line + "\n").encode())
@@ -65,30 +78,36 @@ class NUTCommunication:
         return self.file.readline().decode().strip()
 
     def fetch_variables(self) -> dict[str, str]:
-        self.send_line(f"LIST VAR {UPSD_TARGET}")
+        try:
+            self.send_line(f"LIST VAR {UPSD_TARGET}")
 
-        # Process variables
-        variables = {}
-        while True:
-            line = self.recv_line()
-            if line.startswith("END LIST VAR"):
-                break
+            # Process variables
+            variables = {}
+            while True:
+                line = self.recv_line()
+                if line.startswith("END LIST VAR"):
+                    break
 
-            line_data = NUT_VARIABLE_REGEX.match(line)
-            if line_data is None:
-                continue
+                line_data = NUT_VARIABLE_REGEX.match(line)
+                if line_data is None:
+                    continue
 
-            key, value = line_data.groups()
-            variables[key] = value
+                key, value = line_data.groups()
+                variables[key] = value
 
-        return variables
+            return variables
+
+        except TimeoutError:
+            log.error("Connection to NUT timed out, reestablishing socket.")
+            self.connect()
+            return self.fetch_variables()
 
     def kill(self) -> None:
         self.send_line("LOGOUT")
         self.recv_line()
         self.socket.close()
 
-        print("Connection to NUT killed, goodbye.")
+        log.warning("Connection to NUT killed, daemon is exiting!")
 
 NUT = NUTCommunication()
 atexit.register(NUT.kill)
@@ -106,7 +125,7 @@ while True:
         ("Output Voltage", f"{variables['output.voltage']}V"),
         ("Battery Voltage", f"{variables['battery.voltage']}V"),
     ]
-    print(f"upsx {__version__} | {' | '.join(f'{k}: {v}' for k, v in READOUT_INFO)}")
+    log.info(" | ".join(f"{k}: {v}" for k, v in READOUT_INFO))
 
     # Handle launching commands
     for possible_command in RUN_COMMAND:
