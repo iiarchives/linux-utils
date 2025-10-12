@@ -9,10 +9,14 @@ import json
 from pathlib import Path
 from getpass import getpass
 from base64 import b64encode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 # Initialization
-__version__ = "0.2.0"
+__version__ = "0.3.0"
+
+class RequestError(Exception):
+    pass
 
 # Handle synchronization
 class Node:
@@ -20,14 +24,18 @@ class Node:
         self.name, self.url, self.auth = name, url, auth
 
     def request(self, endpoint: str, **kwargs) -> str:
-        return urlopen(Request(
-            f"{self.url}/control/rewrite/{endpoint}",
-            headers = {
-                "Authorization": f"Basic {self.auth}",
-                "Content-Type": "application/json"
-            },
-            **kwargs
-        )).read()
+        try:
+            return urlopen(Request(
+                f"{self.url}/control/rewrite/{endpoint}",
+                headers = {
+                    "Authorization": f"Basic {self.auth}",
+                    "Content-Type": "application/json"
+                },
+                **kwargs
+            )).read()
+
+        except HTTPError as e:
+            raise RequestError(e.code)
 
     def fetch_records(self) -> list[dict[str, str]]:
         return json.loads(self.request("list"))
@@ -46,33 +54,38 @@ def sync(nodes: list[Node], records: dict[str, str]) -> None:
         added, removed, updated = 0, 0, 0
         print(f"    {node.name}{' ' * (longest_node_name - len(node.name))}...", end = "", flush = True)
 
-        # Load existing records from node
-        existing_records = node.fetch_records()
-        for record in existing_records:
-            existing_answer = records.get(record["domain"])
+        try:
 
-            # Remove anything that doesn't match our database
-            mismatched = existing_answer != record["answer"]
-            if mismatched:
-                if existing_answer is not None:
-                    node.add_record(record | {"answer": existing_answer})
-                    updated += 1
+            # Load existing records from node
+            existing_records = node.fetch_records()
+            for record in existing_records:
+                existing_answer = records.get(record["domain"])
 
-                else:
-                    removed += 1
+                # Remove anything that doesn't match our database
+                mismatched = existing_answer != record["answer"]
+                if mismatched:
+                    if existing_answer is not None:
+                        node.add_record(record | {"answer": existing_answer})
+                        updated += 1
 
-                node.delete_record(record)
+                    else:
+                        removed += 1
 
-        # Handle new records
-        existing_records = {record["domain"]: record["answer"] for record in existing_records}
-        for domain, answer in records.items():
-            if domain in existing_records:
-                continue
+                    node.delete_record(record)
 
-            node.add_record({"domain": domain, "answer": answer})
-            added += 1
+            # Handle new records
+            existing_records = {record["domain"]: record["answer"] for record in existing_records}
+            for domain, answer in records.items():
+                if domain in existing_records:
+                    continue
 
-        print(f"\033[32m\tOK \033[90m(added: {added}, removed: {removed}, updated: {updated})")
+                node.add_record({"domain": domain, "answer": answer})
+                added += 1
+
+            print(f"\033[32m\tOK \033[90m(added: {added}, removed: {removed}, updated: {updated})")
+
+        except RequestError as e:
+            print(f"\033[31m\tFAIL \033[90m(HTTP {e})")
 
 def list_records(records: dict[str, str]) -> None:
     print("\033[34mDNS Records")
