@@ -15,35 +15,39 @@ from urllib.request import Request, urlopen
 __version__ = "0.2.0"
 
 # Handle synchronization
-def request(node_data: dict[str, str], endpoint: str, **kwargs) -> str:
-    return urlopen(Request(
-        f"{node_data['url']}/control/rewrite/{endpoint}",
-        headers = {
-            "Authorization": f"Basic {node_data['auth']}",
-            "Content-Type": "application/json"
-        },
-        **kwargs
-    )).read()
+class Node:
+    def __init__(self, name: str, url: str, auth: str) -> None:
+        self.name, self.url, self.auth = name, url, auth
 
-def fetch_records(node_data: dict[str, str]) -> list[dict[str, str]]:
-    return json.loads(request(node_data, "list"))
+    def request(self, endpoint: str, **kwargs) -> str:
+        return urlopen(Request(
+            f"{self.url}/control/rewrite/{endpoint}",
+            headers = {
+                "Authorization": f"Basic {self.auth}",
+                "Content-Type": "application/json"
+            },
+            **kwargs
+        )).read()
 
-def delete_record(node_data: dict[str, str], record: dict[str, str]) -> None:
-    request(node_data, "delete", method = "POST", data = json.dumps(record).encode())
+    def fetch_records(self) -> list[dict[str, str]]:
+        return json.loads(self.request("list"))
 
-def add_record(node_data: dict[str, str], record: dict[str, str]) -> None:
-    request(node_data, "add", method = "POST", data = json.dumps(record).encode())
+    def delete_record(self, record: dict[str, str]) -> None:
+        self.request("delete", method = "POST", data = json.dumps(record).encode())
 
-def sync(nodes: dict[str, dict[str, str]], records: dict[str, str]) -> None:
+    def add_record(self, record: dict[str, str]) -> None:
+        self.request("add", method = "POST", data = json.dumps(record).encode())
+
+def sync(nodes: list[Node], records: dict[str, str]) -> None:
     print("\033[90mAttempting to sync records")
 
-    longest_node_name = len(max(nodes.keys(), key = lambda x: len(x)))
-    for node_name, node_data in nodes.items():
+    longest_node_name = len(max(nodes, key = lambda node: len(node.name)).name)
+    for node in nodes:
         added, removed, updated = 0, 0, 0
-        print(f"    {node_name}{' ' * (longest_node_name - len(node_name))}...", end = "", flush = True)
+        print(f"    {node.name}{' ' * (longest_node_name - len(node.name))}...", end = "", flush = True)
 
         # Load existing records from node
-        existing_records = fetch_records(node_data)
+        existing_records = node.fetch_records()
         for record in existing_records:
             existing_answer = records.get(record["domain"])
 
@@ -51,13 +55,13 @@ def sync(nodes: dict[str, dict[str, str]], records: dict[str, str]) -> None:
             mismatched = existing_answer != record["answer"]
             if mismatched:
                 if existing_answer is not None:
-                    add_record(node_data, record | {"answer": existing_answer})
+                    node.add_record(record | {"answer": existing_answer})
                     updated += 1
 
                 else:
                     removed += 1
 
-                delete_record(node_data, record)
+                node.delete_record(record)
 
         # Handle new records
         existing_records = {record["domain"]: record["answer"] for record in existing_records}
@@ -65,7 +69,7 @@ def sync(nodes: dict[str, dict[str, str]], records: dict[str, str]) -> None:
             if domain in existing_records:
                 continue
 
-            add_record(node_data, {"domain": domain, "answer": answer})
+            node.add_record({"domain": domain, "answer": answer})
             added += 1
 
         print(f"\033[32m\tOK \033[90m(added: {added}, removed: {removed}, updated: {updated})")
@@ -104,8 +108,8 @@ class Configuration:
             del self.data["nodes"][node]
             self.save()
 
-    def get_nodes(self) -> dict[str, dict[str, str]]:
-        return self.data.get("nodes") or {}
+    def get_nodes(self) -> list[Node]:
+        return [Node(k, v["url"], v["auth"]) for k, v in self.data.get("nodes", {}).items()]
 
     def add_record(self, domain: str, address: str) -> None:
         if "records" not in self.data:
@@ -146,15 +150,15 @@ def main() -> None:
             if not existing_nodes:
                 return print("\033[90mNo nodes are being managed yet.\033[0m")
 
-            longest_name = len(max(existing_nodes.keys(), key = lambda x: len(x)))
+            longest_name = len(max(existing_nodes, key = lambda x: len(x.name)).name)
 
             print("\033[34mManaged nodes")
-            for node_name, node_data in existing_nodes.items():
-                print(f"    \033[33m{node_name}{' ' * (longest_name - len(node_name))} \033[90m@ {node_data['url']}")
+            for node in existing_nodes:
+                print(f"    \033[33m{node.name}{' ' * (longest_name - len(node.name))} \033[90m@ {node.url}")
 
         case ["node", "add", node_name]:
             existing_nodes = config.get_nodes()
-            if node_name in existing_nodes:
+            if node_name in [node.name for node in existing_nodes]:
                 return print("\033[90mNothing changed.\033[0m")
             
             management_url = input("\033[34mManagement URL (https://ns.example.org): \033[33m")
@@ -166,7 +170,7 @@ def main() -> None:
 
         case ["node", "del", node_name]:
             existing_nodes = config.get_nodes()
-            if node_name not in existing_nodes:
+            if node_name not in [node.name for node in existing_nodes]:
                 return print("\033[90mNothing changed.\033[0m")
             
             config.del_node(node_name)
@@ -206,11 +210,11 @@ def main() -> None:
             print("\033[90mAttempting to fetch records")
 
             existing_nodes, existing_records = config.get_nodes(), {}
-            longest_node_name = len(max(existing_nodes.keys(), key = lambda x: len(x)))
+            longest_node_name = len(max(existing_nodes, key = lambda x: len(x.name)).name)
 
-            for node_name, node_data in config.get_nodes().items():
-                fetched_records = fetch_records(node_data)
-                print(f"\033[90m    {node_name}{' ' * (longest_node_name - len(node_name))}...", end = "", flush = True)
+            for node in config.get_nodes():
+                fetched_records = node.fetch_records()
+                print(f"\033[90m    {node.name}{' ' * (longest_node_name - len(node.name))}...", end = "", flush = True)
                 existing_records |= {record["domain"]: record["answer"] for record in fetched_records}
 
                 print(f"\033[32m\tOK ({len(fetched_records)} record(s))")
