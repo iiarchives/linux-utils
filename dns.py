@@ -12,7 +12,7 @@ from base64 import b64encode
 from urllib.request import Request, urlopen
 
 # Initialization
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Handle synchronization
 def request(node_data: dict[str, str], endpoint: str, **kwargs) -> str:
@@ -129,10 +129,14 @@ def main() -> None:
     match sys.argv[1:]:
         case [] | ["help"]:
             print("\033[34mCommands")
-            for command in ["help", "node", "node add \033[33m<name>", "node del \033[33m<name>", "add \033[33m<domain> <address>", "del \033[33m<domain>", "list", "sync", "fetch"]:
+            for command in ["help", "version", "node", "node add \033[33m<name>", "node del \033[33m<name>", "add \033[33m<domain> <address>", "del \033[33m<domain>", "list", "sync", "fetch"]:
                 print(f"    \033[90mdns {command}")
 
             print("\n\033[34mCopyright (c) 2025 \033[33miiPython\033[0m")
+
+        case ["version"]:
+            print(f"\033[34magh-control v{__version__}\033[0m by \033[33miiPython\033[0m")
+            print("\033[90mhttps://github.com/iiarchives/linux-utils\033[0m")
 
         case ["node"]:
             print("\033[34mCommands")
