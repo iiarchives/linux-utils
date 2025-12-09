@@ -206,42 +206,43 @@ if __name__ == "__main__":
     iavx = IAVx(Path(sys.argv[1]), console)
 
     # Process settings
+    console.print("[yellow]Encode Settings\n\n  [yellow]Video Track")
+
     settings = {}
     for id, name, default in [("preset", "SVT-AV1 Preset", "4"), ("crf", "CRF", "28"), ("ivtc", "Inverse Telecine?", "no")]:
-        value = console.input(f"[bold yellow]{name} ({default}) -> ") or default
+        value = console.input(f"    [bright_black]{name} ({default}) -> ") or default
 
         # Overwrite previous line
         print("\033[1F", end = "")
-        console.print(f"[bold yellow]{name} ({default}) -> [bright_black]{value}")
+        console.print(f"    [bright_black]{name} ({default}) -> [bold blue]{value}")
 
         settings[id] = value
 
-    print()
-
     # Fetch audio channel settings
     for index in range(len(iavx.file_info[0][1]["audio"])):
-        console.print(f"[bold yellow]Audio Track #{index + 1}")
-    
-        channels = console.input(f"  [bright_black]-> Channel Count: ")
+        console.print(f"\n  [yellow]Audio Track #{index + 1}")
+
+        # Handle settings
+        values = []
+        for question in ["Channel Count", "Track Title (leave as-is)"]:
+            values.append(console.input(f"    [bright_black]-> {question}: "))
+
+            # Overwrite previous line
+            print("\033[1F\033[2K\r", end = "")
+            console.print(f"    [bright_black]-> {question}: [bold blue]{values[-1] or 'default'}")
+
         audio_index = COMMAND_ARGUMENTS.index("libopus") + 1
 
         # Add in ac parameter
-        COMMAND_ARGUMENTS.insert(audio_index, f"-ac:a:{index}")
-        COMMAND_ARGUMENTS.insert(audio_index + 1, channels)
+        if values[0].strip():
+            COMMAND_ARGUMENTS.insert(audio_index, f"-ac:a:{index}")
+            COMMAND_ARGUMENTS.insert(audio_index + 1, values[0])
+            audio_index += 2
 
-        # Overwrite previous line
-        print("\033[1F\033[2K\r", end = "")
-        console.print(f"  [bright_black]-> Channel Count: {channels}")
-
-        # Ask for title
-        title = console.input(f"  [bright_black]-> Track Title (leave as-is): ")
-        if title.strip():
-            COMMAND_ARGUMENTS.insert(audio_index + 2, f"-metadata:s:a:{index}")
-            COMMAND_ARGUMENTS.insert(audio_index + 3, f"title={title}")
-
-        # Overwrite previous line
-        print("\033[1F\033[2K\r", end = "")
-        console.print(f"  [bright_black]-> Track Title: {title or 'leave as-is'}\n")
+        # Add in title metadata
+        if values[1].strip():
+            COMMAND_ARGUMENTS.insert(audio_index, f"-metadata:s:a:{index}")
+            COMMAND_ARGUMENTS.insert(audio_index + 1, f"title={values[1]}")
 
     print()
     iavx.encode_all(settings)
