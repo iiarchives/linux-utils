@@ -2,6 +2,7 @@
 # iiPython AV1 Encoding Tool - IAVx v1.7
 
 # Modules
+import re
 import sys
 import json
 import typing
@@ -49,6 +50,9 @@ COMMAND_ARGUMENTS = [
     "-metadata", f"comment=Encoded by iiPython (v1.{ENCODE_VERSION}) w/ AV1 + OPUS.",
     "%o"
 ]
+
+# IAVx
+RE_FFMPEG_STAT = re.compile(r"^frame=\s*(\d+)\s+fps=\s*([\d.]+).+size=\s*(\d+)KiB")
 
 class IAVx:
     def __init__(self, target: Path, console: Console) -> None:
@@ -182,8 +186,11 @@ class IAVx:
                         if "pts_time" in line:
                             progress.update(task, completed = round(float(line.split("pts_time:")[1].split("duration")[0].strip())))
 
-                        if "elapsed=" in line and "showinfo" not in line:
-                            live.update(f"  [bright_black]-> {line}")
+                        else:
+                            stats = RE_FFMPEG_STAT.search(line)
+                            if stats:
+                                frame, fps, size = stats.groups()
+                                live.update(f"  [bright_black]-> Frame: {frame} | FPS: {fps} | Filesize: {int(size) * 0.001024:.2f}MB")
 
                     progress.update(task, completed = metadata["video"][-1], description = f"[green]Encoded {file.name}")
                     [live.stop() for live in (progress, live)]
