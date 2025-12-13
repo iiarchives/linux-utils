@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# iiPython AV1 Encoding Tool - IAVx v1.7
+# iiPython AV1 Encoding Tool - IAVx v1.8
 
 # Modules
 import re
@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.progress import MofNCompleteColumn, SpinnerColumn, TimeElapsedColumn, Progress
 
 # Initialization
-ENCODE_VERSION = "7"
+ENCODE_VERSION = "8"
 COMMAND_ARGUMENTS = [
     "ffmpeg",
     "-analyzeduration", "500M",
@@ -25,13 +25,13 @@ COMMAND_ARGUMENTS = [
     "-stats",
 
     # Handle input control
-    "-i"  ,     "%i",
-    "-map",     "0",
+    "-i"             , "%i",
+    "-map"           ,  "0",
 
     # Video encoding
     "-c:v"    , "libsvtav1",
     "-preset" , "%p",
-    "-crf"    , "%c",
+    "-crf"    , "%c", 
     "-aq-mode", "2" ,
     "-g"      , "%g",        # GOP, 10 times framerate, max 300
     "-vf"     , "showinfo",
@@ -89,8 +89,11 @@ class IAVx:
 
     @staticmethod
     def scan_files(target: Path) -> list[Path]:
+        if target.is_file():
+            return [target]
+
         return sorted(
-            (file for file in target.iterdir() if "iipython" not in file.name.lower()),
+            (file for file in target.iterdir() if "iipython v" not in file.name.lower()),
             key = lambda file: file.name
         )
 
@@ -135,7 +138,7 @@ class IAVx:
         for key, value in {
             "i": file,
             "o": output_file,
-            "g": round(metadata["video"][1] * 10),
+            "g": self.settings["gop"] if self.settings["gop"].isnumeric() else min(round(metadata["video"][1] * 10), 300),
             "c": self.settings["crf"],
             "p": self.settings["preset"]
         }.items():
@@ -216,7 +219,7 @@ if __name__ == "__main__":
     console.print("[yellow]Encode Settings\n\n  [yellow]Video Track")
 
     settings = {}
-    for id, name, default in [("preset", "SVT-AV1 Preset", "4"), ("crf", "CRF", "28"), ("ivtc", "Inverse Telecine?", "no")]:
+    for id, name, default in [("preset", "SVT-AV1 Preset", "4"), ("crf", "CRF", "24"), ("ivtc", "Inverse Telecine?", "no"), ("gop", "GOP Override", "autodetect")]:
         value = console.input(f"    [bright_black]{name} ({default}) -> ") or default
 
         # Overwrite previous line
@@ -231,7 +234,7 @@ if __name__ == "__main__":
 
         # Handle settings
         values = []
-        for question in ["Channel Count", "Track Title (leave as-is)"]:
+        for question in ["Channel Count", "Track Title (leave as-is)", "Bitrate"]:
             values.append(console.input(f"    [bright_black]-> {question}: "))
 
             # Overwrite previous line
@@ -250,6 +253,12 @@ if __name__ == "__main__":
         if values[1].strip():
             COMMAND_ARGUMENTS.insert(audio_index, f"-metadata:s:a:{index}")
             COMMAND_ARGUMENTS.insert(audio_index + 1, f"title={values[1]}")
+            audio_index += 2
+
+        # Add in bitrate
+        if values[2].strip():
+            COMMAND_ARGUMENTS.insert(audio_index, f"-b:a:{index}")
+            COMMAND_ARGUMENTS.insert(audio_index + 1, f"{values[2]}k")
 
     print()
     iavx.encode_all(settings)
