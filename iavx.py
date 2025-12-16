@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.progress import MofNCompleteColumn, SpinnerColumn, TimeElapsedColumn, Progress
 
 # Initialization
-ENCODE_VERSION = "8"
+ENCODE_VERSION = "10"
 COMMAND_ARGUMENTS = [
     "ffmpeg",
     "-analyzeduration", "500M",
@@ -31,9 +31,8 @@ COMMAND_ARGUMENTS = [
     # Video encoding
     "-c:v"    , "libsvtav1",
     "-preset" , "%p",
-    "-crf"    , "%c", 
+    "-crf"    , "%c",
     "-aq-mode", "2" ,
-    "-g"      , "%g",        # GOP, 10 times framerate, max 300
     "-vf"     , "showinfo",
 
     # 10 bit color encoding
@@ -47,7 +46,7 @@ COMMAND_ARGUMENTS = [
     "-y"  ,               # Force overwrite without asking
 
     # Tag the file in case of later analysis
-    "-metadata", f"comment=Encoded by iiPython (v1.{ENCODE_VERSION}) w/ AV1 + OPUS.",
+    "-metadata", "comment=",
     "%o"
 ]
 
@@ -138,7 +137,6 @@ class IAVx:
         for key, value in {
             "i": file,
             "o": output_file,
-            "g": self.settings["gop"] if self.settings["gop"].isnumeric() else min(round(metadata["video"][1] * 10), 300),
             "c": self.settings["crf"],
             "p": self.settings["preset"]
         }.items():
@@ -219,7 +217,7 @@ if __name__ == "__main__":
     console.print("[yellow]Encode Settings\n\n  [yellow]Video Track")
 
     settings = {}
-    for id, name, default in [("preset", "SVT-AV1 Preset", "4"), ("crf", "CRF", "24"), ("ivtc", "Inverse Telecine?", "no"), ("gop", "GOP Override", "autodetect")]:
+    for id, name, default in [("preset", "SVT-AV1 Preset", "4"), ("crf", "CRF", "24"), ("ivtc", "Inverse Telecine?", "no")]:
         value = console.input(f"    [bright_black]{name} ({default}) -> ") or default
 
         # Overwrite previous line
@@ -259,6 +257,9 @@ if __name__ == "__main__":
         if values[2].strip():
             COMMAND_ARGUMENTS.insert(audio_index, f"-b:a:{index}")
             COMMAND_ARGUMENTS.insert(audio_index + 1, f"{values[2]}k")
+
+    # Attach encode settings
+    COMMAND_ARGUMENTS[COMMAND_ARGUMENTS.index("comment=")] += f"SVT-AV1 / CRF {settings['crf']} / Preset {settings['preset']}"
 
     print()
     iavx.encode_all(settings)
